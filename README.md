@@ -64,16 +64,47 @@ MongoDB uses:
 mongodb:3.6
 ```
 
-## One-Time Setup Still Required
+## One-Time Setup
 
-Before the workflow can run successfully, complete the mandatory setup items:
+Manual work is limited to the mandatory AWS and GitHub bootstrap needed before GitHub Actions can authenticate to AWS. After this setup, the intended flow is fully automated:
 
-- Create the mandatory one-time AWS IAM bootstrap for GitHub Actions OIDC.
-- Set the GitHub Actions secret `AWS_GITHUB_ACTIONS_ROLE_ARN`.
-- Set or confirm the GitHub Actions variable `AWS_REGION`.
-- Review Terraform IAM permissions and replace starter broad permissions with least privilege.
+```text
+GitHub Actions -> Terraform apply -> EKS Auto Mode + ECR -> Docker build/push -> kubectl apply
+```
 
-## GitHub Actions OIDC Bootstrap
+### Required GitHub Secret
+
+Create this repository secret before running the workflow:
+
+```text
+AWS_GITHUB_ACTIONS_ROLE_ARN
+```
+
+The value must be the ARN of an AWS IAM role that GitHub Actions can assume using OIDC.
+
+### Why A Bootstrap Role Is Required
+
+There is a real first-run circular dependency:
+
+- `deploy.yml` needs `AWS_GITHUB_ACTIONS_ROLE_ARN` before it can authenticate to AWS.
+- Terraform runs inside `deploy.yml`.
+- Terraform currently defines the project-managed GitHub Actions OIDC role and outputs `github_actions_role_arn`.
+
+Because GitHub Actions needs an AWS role before Terraform can run, the very first AWS authentication role cannot be created by the same workflow run that depends on it. A one-time bootstrap IAM role is therefore required.
+
+After Terraform creates the project-managed role, you may optionally update the GitHub secret `AWS_GITHUB_ACTIONS_ROLE_ARN` to the Terraform output `github_actions_role_arn`.
+
+### Minimum Manual Steps
+
+1. In AWS, create or confirm the GitHub Actions OIDC identity provider.
+2. In AWS, create one bootstrap IAM role trusted by this repository and branch.
+3. Copy the bootstrap role ARN.
+4. In GitHub, create the repository secret `AWS_GITHUB_ACTIONS_ROLE_ARN` with that ARN.
+5. In GitHub, create or confirm the repository variable `AWS_REGION`, for example `us-east-1`.
+
+No Kubernetes deployment, Docker build, ECR push, EKS creation, or application deployment should be done manually.
+
+## GitHub Actions OIDC Bootstrap Review
 
 The workflow uses GitHub Actions OIDC authentication here:
 
@@ -91,7 +122,7 @@ permissions:
     aws-region: ${{ env.AWS_REGION }}
 ```
 
-Because `deploy.yml` reads `AWS_GITHUB_ACTIONS_ROLE_ARN` before running Terraform, a one-time bootstrap IAM role is required. This avoids a circular dependency where GitHub Actions needs an AWS role before Terraform can create AWS resources.
+Because `deploy.yml` reads `AWS_GITHUB_ACTIONS_ROLE_ARN` before running Terraform, the bootstrap role is mandatory one-time setup and does not violate the project rule. The manual step exists only to let GitHub Actions become the primary orchestrator.
 
 ### Required One-Time AWS Setup
 
@@ -176,6 +207,21 @@ The workflow is configured correctly for OIDC because:
 - It uses `aws-actions/configure-aws-credentials@v4`.
 - It passes `role-to-assume` from `AWS_GITHUB_ACTIONS_ROLE_ARN`.
 - The IAM trust policy limits access to this repository and the `main` branch.
+- It does not use long-lived AWS access keys in the workflow.
+
+### Architecture Verification
+
+The documented workflow still follows the required Project #3 architecture:
+
+```text
+GitHub Actions
+  -> Terraform provisions VPC, EKS Auto Mode, ECR, IAM/OIDC
+  -> Docker image is built and pushed to ECR
+  -> kubectl deploys Kubernetes manifests
+  -> NameGen runs on EKS Auto Mode with MongoDB and an AWS NLB service
+```
+
+This keeps GitHub Actions as the primary orchestrator and Terraform as the infrastructure provisioning layer.
 
 ### Circular Dependency Review
 
@@ -194,6 +240,10 @@ For a clean first run, use one of these bootstrap approaches:
 - Keep the bootstrap role outside this Terraform project and update the Terraform code later to reference the existing OIDC provider instead of creating a new one.
 
 The current documented requirement is still valid: the repository secret `AWS_GITHUB_ACTIONS_ROLE_ARN` must exist before `deploy.yml` can authenticate to AWS.
+
+### Recommended Follow-Up
+
+Keep the bootstrap role as narrow as possible. The current Terraform starter attaches broad permissions to the project-managed GitHub Actions role for simplicity, but the final project should replace broad permissions with least-privilege IAM policies once the required AWS actions are known.
 
 ## Status
 
