@@ -56,6 +56,7 @@ diagrams/architecture.drawio
 |-- kubernetes/
 |   |-- namespace.yaml
 |   |-- mongodb-secret.yaml
+|   |-- mongodb-init-configmap.yaml
 |   |-- mongodb-service.yaml
 |   |-- mongodb-statefulset.yaml
 |   |-- namegen-deployment.yaml
@@ -267,6 +268,7 @@ The manifests deploy:
 
 - Namespace: `namegen`
 - MongoDB Secret
+- MongoDB init ConfigMap
 - MongoDB headless Service
 - MongoDB StatefulSet
 - NameGen Deployment
@@ -277,6 +279,15 @@ The NameGen deployment uses this required environment variable:
 
 ```text
 MONGODB_URL=mongodb://genuser:password@mongodb/namegen
+```
+
+MongoDB creates the application user during container initialization:
+
+```text
+username: genuser
+password: password
+database: namegen
+role: readWrite
 ```
 
 ## 7. MongoDB Persistence
@@ -293,6 +304,18 @@ Persistent storage is configured with a `volumeClaimTemplates` section in:
 
 ```text
 kubernetes/mongodb-statefulset.yaml
+```
+
+The MongoDB init script is stored in:
+
+```text
+kubernetes/mongodb-init-configmap.yaml
+```
+
+It is mounted at:
+
+```text
+/docker-entrypoint-initdb.d/
 ```
 
 The PVC requests persistent storage for MongoDB data at:

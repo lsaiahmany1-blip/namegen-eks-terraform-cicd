@@ -160,12 +160,17 @@ jobs:
           if kubectl -n namegen get statefulset mongodb >/dev/null 2>&1; then
             current_sts_storage_class="$(kubectl -n namegen get statefulset mongodb -o jsonpath='{.spec.volumeClaimTemplates[0].spec.storageClassName}' 2>/dev/null || true)"
             current_sts_storage="$(kubectl -n namegen get statefulset mongodb -o jsonpath='{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}' 2>/dev/null || true)"
+            current_init_configmap="$(kubectl -n namegen get statefulset mongodb -o jsonpath='{.spec.template.spec.volumes[?(@.name=="mongodb-init")].configMap.name}' 2>/dev/null || true)"
             if [ "$current_sts_storage_class" != "$desired_storage_class" ]; then
               echo "StatefulSet storageClassName is '${current_sts_storage_class:-<empty>}', expected $desired_storage_class."
               recreate_storage="true"
             fi
             if [ "$current_sts_storage" != "$desired_storage" ]; then
               echo "StatefulSet storage request is '${current_sts_storage:-<empty>}', expected $desired_storage."
+              recreate_storage="true"
+            fi
+            if [ "$current_init_configmap" != "mongodb-init" ]; then
+              echo "StatefulSet is missing MongoDB init ConfigMap volume. Recreating storage so init scripts can create the application user."
               recreate_storage="true"
             fi
           fi
@@ -277,6 +282,24 @@ jobs:
 
           echo "StorageClass gp3:"
           kubectl get storageclass gp3 -o yaml
+
+          echo "Testing application write/read path through the in-cluster service:"
+          kubectl -n namegen delete pod namegen-api-check --ignore-not-found=true
+          kubectl -n namegen run namegen-api-check \
+            --rm \
+            --attach \
+            --restart=Never \
+            --wait=true \
+            --image=curlimages/curl:8.8.0 \
+            --command -- sh -c '
+              set -e
+              payload="{\"firstName\":\"Workflow\",\"lastName\":\"Validation\"}"
+              curl -fsS -X POST \
+                -H "Content-Type: application/json" \
+                -d "$payload" \
+                http://namegen/api/names
+              curl -fsS http://namegen/api/names | grep -q "Workflow"
+            '
 
           echo "Recent events in namespace namegen:"
           kubectl -n namegen get events --sort-by=.lastTimestamp

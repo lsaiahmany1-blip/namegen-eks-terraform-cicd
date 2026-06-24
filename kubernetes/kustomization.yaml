@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - mongodb-secret.yaml
+  - mongodb-init-configmap.yaml
   - mongodb-service.yaml
   - storageclass-gp3.yaml
   - mongodb-statefulset.yaml
