@@ -47,6 +47,7 @@ diagrams/architecture.drawio
 |   `-- workflows/
 |       `-- deploy.yml
 |-- terraform/
+|   |-- backend.tf
 |   |-- versions.tf
 |   |-- providers.tf
 |   |-- variables.tf
@@ -92,6 +93,8 @@ Terraform files are located in:
 terraform/
 ```
 
+Terraform state is stored remotely in S3 so GitHub Actions can keep track of infrastructure between workflow runs. DynamoDB is used for state locking to prevent concurrent Terraform runs from modifying the same state at the same time.
+
 ## 5. CI/CD Pipeline with GitHub Actions
 
 GitHub Actions is the primary orchestrator. The workflow is located at:
@@ -114,7 +117,11 @@ The pipeline performs these steps:
 
 ### One-Time Setup
 
-Before the first workflow run, create the mandatory GitHub Actions OIDC bootstrap role in AWS. This is required because GitHub Actions must assume an AWS role before Terraform can run.
+Before the first workflow run, complete the mandatory bootstrap items below. These are the only manual setup steps required before GitHub Actions can run the full deployment flow.
+
+#### AWS OIDC Bootstrap
+
+Create the mandatory GitHub Actions OIDC bootstrap role in AWS. This is required because GitHub Actions must assume an AWS role before Terraform can run.
 
 Create this GitHub repository secret:
 
@@ -149,6 +156,39 @@ Minimum manual setup:
    ```text
    AWS_REGION=us-east-1
    ```
+
+#### Terraform Remote State Bootstrap
+
+Create one S3 bucket for Terraform state and one DynamoDB table for Terraform state locking before the first workflow run.
+
+Recommended names:
+
+```text
+S3 bucket: <unique-prefix>-namegen-terraform-state
+DynamoDB table: namegen-terraform-locks
+State key: namegen/project3/terraform.tfstate
+```
+
+The S3 bucket should have:
+
+- Versioning enabled
+- Server-side encryption enabled
+- Public access blocked
+
+The DynamoDB table should have:
+
+- Partition key: `LockID`
+- Partition key type: `String`
+
+Create these GitHub Actions repository variables:
+
+```text
+TF_STATE_BUCKET=<your-s3-state-bucket-name>
+TF_STATE_KEY=namegen/project3/terraform.tfstate
+TF_LOCK_TABLE=namegen-terraform-locks
+```
+
+The workflow passes these values to `terraform init`, so Terraform state persists between GitHub Actions runs. This prevents Terraform from losing track of infrastructure that was created during earlier runs.
 
 After this one-time setup, the deployment flow is automated through GitHub Actions.
 
@@ -262,6 +302,8 @@ terraform destroy
 
 Kubernetes resources are managed by the workflow and the EKS cluster. Destroying the Terraform-managed infrastructure removes the cluster, networking resources, and ECR repository.
 
+Do not delete the S3 state bucket or DynamoDB lock table before running `terraform destroy`. Terraform needs the remote state to know which AWS resources belong to this project.
+
 ## 12. Troubleshooting
 
 Common checks:
@@ -269,6 +311,9 @@ Common checks:
 - If AWS authentication fails, verify `AWS_GITHUB_ACTIONS_ROLE_ARN` exists in GitHub repository secrets.
 - If OIDC authentication fails, verify the IAM role trust policy allows the repository and `main` branch.
 - If Terraform cannot create resources, verify the bootstrap role has the required AWS permissions.
+- If Terraform cannot initialize, verify `TF_STATE_BUCKET`, `TF_STATE_KEY`, and `TF_LOCK_TABLE` are configured in GitHub Actions variables.
+- If Terraform reports a state lock, check the DynamoDB lock table and confirm no other workflow run is active.
+- If infrastructure already exists but Terraform wants to recreate it, verify the workflow is using the same S3 backend bucket and state key as previous runs.
 - If the image cannot be pulled, verify the image was pushed to ECR and the EKS nodes can read from ECR.
 - If MongoDB does not start, check the StatefulSet, PVC, and events in the `namegen` namespace.
 - If the application cannot connect to MongoDB, verify:
