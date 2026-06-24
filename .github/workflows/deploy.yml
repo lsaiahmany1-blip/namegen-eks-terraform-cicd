@@ -151,6 +151,22 @@ jobs:
             kubectl -n namegen delete "$pvc"
           done
 
+          for attempt in {1..30}; do
+            if ! kubectl -n namegen get pvc -o name | grep -q '^persistentvolumeclaim/mongodb-data-mongodb-'; then
+              break
+            fi
+
+            if [ "$attempt" -eq 30 ]; then
+              echo "Timed out waiting for MongoDB PVC deletion."
+              kubectl -n namegen get pvc
+              exit 1
+            fi
+
+            sleep 5
+          done
+
+          kubectl delete storageclass gp3 --ignore-not-found=true
+
       - name: Deploy Kubernetes manifests
         env:
           IMAGE_TAG: ${{ github.sha }}
