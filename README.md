@@ -81,6 +81,7 @@ Terraform provisions the AWS infrastructure required by the project:
 - NAT Gateway
 - Route tables and subnet associations
 - EKS Auto Mode cluster
+- Amazon EBS CSI Driver EKS add-on
 - ECR repository
 - IAM roles and policies
 - GitHub Actions OIDC integration
@@ -298,6 +299,14 @@ The PVC requests persistent storage for MongoDB data at:
 /data/db
 ```
 
+The `gp3` StorageClass uses the AWS EBS CSI provisioner:
+
+```text
+ebs.csi.aws.com
+```
+
+Terraform installs the Amazon EBS CSI Driver as an EKS add-on before GitHub Actions applies the Kubernetes manifests.
+
 ## 8. Application Access through NLB
 
 The NameGen application is exposed with a Kubernetes `LoadBalancer` Service:
@@ -379,6 +388,7 @@ Common checks:
 - If Terraform reports that ECR or IAM resources already exist, import the valid existing resources into the S3-backed Terraform state instead of recreating them.
 - If the image cannot be pulled, verify the image was pushed to ECR and the EKS nodes can read from ECR.
 - If MongoDB does not start, check the StatefulSet, PVC, and events in the `namegen` namespace.
+- If the MongoDB PVC stays pending with `provisioner is not supported`, verify the `aws-ebs-csi-driver` EKS add-on was created by Terraform.
 - If the application cannot connect to MongoDB, verify:
 
   ```text
