@@ -13,6 +13,9 @@
         <mxCell id="ecr" value="Amazon ECR&#xa;NameGen image" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
           <mxGeometry x="610" y="70" width="170" height="70" as="geometry" />
         </mxCell>
+        <mxCell id="user" value="User / Browser" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="60" y="250" width="190" height="60" as="geometry" />
+        </mxCell>
         <mxCell id="eks" value="Amazon EKS Auto Mode Cluster" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
           <mxGeometry x="250" y="250" width="600" height="330" as="geometry" />
         </mxCell>
@@ -37,13 +40,16 @@
         <mxCell id="edge3" edge="1" parent="1" source="terraform" target="eks" style="endArrow=block;html=1;rounded=0;">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge4" edge="1" parent="1" source="nlb" target="eks" style="endArrow=block;html=1;rounded=0;">
+        <mxCell id="edge4" edge="1" parent="1" source="nlb" target="app" style="endArrow=block;html=1;rounded=0;">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="edge5" edge="1" parent="eks" source="app" target="mongo" style="endArrow=block;html=1;rounded=0;">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="edge6" edge="1" parent="eks" source="mongo" target="pvc" style="endArrow=block;html=1;rounded=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge7" edge="1" parent="1" source="user" target="nlb" style="endArrow=block;html=1;rounded=0;">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
