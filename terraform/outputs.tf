@@ -1,3 +1,23 @@
+output "vpc_id" {
+  description = "ID of the VPC created for the project."
+  value       = aws_vpc.this.id
+}
+
+output "public_subnet_ids" {
+  description = "IDs of public subnets tagged for internet-facing Kubernetes load balancers."
+  value       = values(aws_subnet.public)[*].id
+}
+
+output "private_subnet_ids" {
+  description = "IDs of private subnets used by the EKS Auto Mode cluster."
+  value       = values(aws_subnet.private)[*].id
+}
+
+output "nat_gateway_id" {
+  description = "ID of the NAT Gateway used for private subnet outbound access."
+  value       = aws_nat_gateway.this.id
+}
+
 output "cluster_name" {
   description = "EKS cluster name."
   value       = aws_eks_cluster.this.name
