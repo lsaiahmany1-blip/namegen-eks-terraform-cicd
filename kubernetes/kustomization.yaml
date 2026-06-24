@@ -5,6 +5,7 @@ resources:
   - namespace.yaml
   - mongodb-secret.yaml
   - mongodb-service.yaml
+  - storageclass-gp3.yaml
   - mongodb-statefulset.yaml
   - namegen-deployment.yaml
   - namegen-service.yaml
