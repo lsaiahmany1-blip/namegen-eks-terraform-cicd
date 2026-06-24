@@ -81,7 +81,7 @@ Terraform provisions the AWS infrastructure required by the project:
 - NAT Gateway
 - Route tables and subnet associations
 - EKS Auto Mode cluster
-- Amazon EBS CSI Driver EKS add-on
+- EKS Auto Mode block storage
 - ECR repository
 - IAM roles and policies
 - GitHub Actions OIDC integration
@@ -299,13 +299,13 @@ The PVC requests persistent storage for MongoDB data at:
 /data/db
 ```
 
-The `gp3` StorageClass uses the AWS EBS CSI provisioner:
+The `gp3` StorageClass uses the EKS Auto Mode block storage provisioner:
 
 ```text
-ebs.csi.aws.com
+ebs.csi.eks.amazonaws.com
 ```
 
-Terraform installs the Amazon EBS CSI Driver as an EKS add-on before GitHub Actions applies the Kubernetes manifests. Terraform also creates the EBS CSI Driver IAM role and connects it to the add-on with IRSA, so no manual AWS Console configuration is required.
+Terraform enables EKS Auto Mode block storage with `storage_config`, so no separate standard EBS CSI add-on, IRSA role, or manual AWS Console configuration is required for this project.
 
 ## 8. Application Access through NLB
 
@@ -388,7 +388,7 @@ Common checks:
 - If Terraform reports that ECR or IAM resources already exist, import the valid existing resources into the S3-backed Terraform state instead of recreating them.
 - If the image cannot be pulled, verify the image was pushed to ECR and the EKS nodes can read from ECR.
 - If MongoDB does not start, check the StatefulSet, PVC, and events in the `namegen` namespace.
-- If the MongoDB PVC stays pending with `provisioner is not supported`, verify the `aws-ebs-csi-driver` EKS add-on was created by Terraform and has the IRSA role attached.
+- If the MongoDB PVC stays pending with `provisioner is not supported`, verify the `gp3` StorageClass uses `ebs.csi.eks.amazonaws.com` for EKS Auto Mode.
 - If the application cannot connect to MongoDB, verify:
 
   ```text
