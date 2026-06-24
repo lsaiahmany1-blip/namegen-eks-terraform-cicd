@@ -142,30 +142,72 @@ jobs:
         run: |
           set -euo pipefail
 
+          desired_storage_class="gp3"
+          desired_provisioner="ebs.csi.eks.amazonaws.com"
+          desired_storage="5Gi"
+          recreate_storage="false"
+          recreate_storage_class="false"
+
           kubectl apply -f "$K8S_MANIFEST_DIR/namespace.yaml"
 
-          kubectl -n namegen delete statefulset mongodb --ignore-not-found=true
-          kubectl -n namegen wait --for=delete pod/mongodb-0 --timeout=180s || true
+          current_provisioner="$(kubectl get storageclass "$desired_storage_class" -o jsonpath='{.provisioner}' 2>/dev/null || true)"
+          if [ -n "$current_provisioner" ] && [ "$current_provisioner" != "$desired_provisioner" ]; then
+            echo "StorageClass $desired_storage_class provisioner is $current_provisioner, expected $desired_provisioner."
+            recreate_storage="true"
+            recreate_storage_class="true"
+          fi
 
-          for pvc in $(kubectl -n namegen get pvc -o name | grep '^persistentvolumeclaim/mongodb-data-mongodb-' || true); do
-            kubectl -n namegen delete "$pvc"
-          done
-
-          for attempt in {1..30}; do
-            if ! kubectl -n namegen get pvc -o name | grep -q '^persistentvolumeclaim/mongodb-data-mongodb-'; then
-              break
+          if kubectl -n namegen get statefulset mongodb >/dev/null 2>&1; then
+            current_sts_storage_class="$(kubectl -n namegen get statefulset mongodb -o jsonpath='{.spec.volumeClaimTemplates[0].spec.storageClassName}' 2>/dev/null || true)"
+            current_sts_storage="$(kubectl -n namegen get statefulset mongodb -o jsonpath='{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}' 2>/dev/null || true)"
+            if [ "$current_sts_storage_class" != "$desired_storage_class" ]; then
+              echo "StatefulSet storageClassName is '${current_sts_storage_class:-<empty>}', expected $desired_storage_class."
+              recreate_storage="true"
             fi
-
-            if [ "$attempt" -eq 30 ]; then
-              echo "Timed out waiting for MongoDB PVC deletion."
-              kubectl -n namegen get pvc
-              exit 1
+            if [ "$current_sts_storage" != "$desired_storage" ]; then
+              echo "StatefulSet storage request is '${current_sts_storage:-<empty>}', expected $desired_storage."
+              recreate_storage="true"
             fi
+          fi
 
-            sleep 5
-          done
+          if kubectl -n namegen get pvc mongodb-data-mongodb-0 >/dev/null 2>&1; then
+            current_pvc_storage_class="$(kubectl -n namegen get pvc mongodb-data-mongodb-0 -o jsonpath='{.spec.storageClassName}' 2>/dev/null || true)"
+            if [ "$current_pvc_storage_class" != "$desired_storage_class" ]; then
+              echo "PVC storageClassName is '${current_pvc_storage_class:-<empty>}', expected $desired_storage_class."
+              recreate_storage="true"
+            fi
+          fi
 
-          kubectl delete storageclass gp3 --ignore-not-found=true
+          if [ "$recreate_storage" = "true" ]; then
+            echo "Recreating MongoDB StatefulSet storage because immutable storage settings changed."
+
+            kubectl -n namegen delete statefulset mongodb --ignore-not-found=true
+            kubectl -n namegen wait --for=delete pod/mongodb-0 --timeout=180s || true
+
+            for pvc in $(kubectl -n namegen get pvc -o name | grep '^persistentvolumeclaim/mongodb-data-mongodb-' || true); do
+              kubectl -n namegen delete "$pvc"
+            done
+
+            for attempt in {1..30}; do
+              if ! kubectl -n namegen get pvc -o name | grep -q '^persistentvolumeclaim/mongodb-data-mongodb-'; then
+                break
+              fi
+
+              if [ "$attempt" -eq 30 ]; then
+                echo "Timed out waiting for MongoDB PVC deletion."
+                kubectl -n namegen get pvc
+                exit 1
+              fi
+
+              sleep 5
+            done
+          else
+            echo "MongoDB storage settings already match the desired configuration."
+          fi
+
+          if [ "$recreate_storage_class" = "true" ]; then
+            kubectl delete storageclass "$desired_storage_class" --ignore-not-found=true
+          fi
 
       - name: Deploy Kubernetes manifests
         env:
@@ -177,16 +219,64 @@ jobs:
 
       - name: Validate Kubernetes deployment
         run: |
+          set -euo pipefail
+
+          for attempt in {1..60}; do
+            pvc_phase="$(kubectl -n namegen get pvc mongodb-data-mongodb-0 -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+            if [ "$pvc_phase" = "Bound" ]; then
+              echo "MongoDB PVC is Bound."
+              break
+            fi
+
+            if [ "$attempt" -eq 60 ]; then
+              echo "MongoDB PVC did not become Bound."
+              kubectl -n namegen describe pvc mongodb-data-mongodb-0 || true
+              kubectl -n namegen get events --sort-by=.lastTimestamp
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          kubectl -n namegen rollout status statefulset/mongodb --timeout=600s
+          kubectl -n namegen wait --for=condition=Ready pod/mongodb-0 --timeout=600s
           kubectl -n namegen rollout status deployment/namegen --timeout=300s
 
-          echo "Pods in namespace namegen:"
+          running_namegen_pods="$(kubectl -n namegen get pods -l app=namegen --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ')"
+          if [ "$running_namegen_pods" -lt 2 ]; then
+            echo "Expected at least 2 Running NameGen pods, found $running_namegen_pods."
+            kubectl -n namegen get pods -o wide
+            exit 1
+          fi
+
+          for attempt in {1..60}; do
+            load_balancer_hostname="$(kubectl -n namegen get service namegen -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
+            if [ -n "$load_balancer_hostname" ]; then
+              echo "NameGen LoadBalancer hostname: $load_balancer_hostname"
+              break
+            fi
+
+            if [ "$attempt" -eq 60 ]; then
+              echo "LoadBalancer hostname is empty."
+              kubectl -n namegen describe service namegen || true
+              kubectl -n namegen get events --sort-by=.lastTimestamp
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          echo "Final pods in namespace namegen:"
           kubectl -n namegen get pods -o wide
 
-          echo "Services in namespace namegen:"
-          kubectl -n namegen get services -o wide
-
-          echo "PVCs in namespace namegen:"
+          echo "Final PVCs in namespace namegen:"
           kubectl -n namegen get pvc
+
+          echo "Final services in namespace namegen:"
+          kubectl -n namegen get svc -o wide
+
+          echo "StorageClass gp3:"
+          kubectl get storageclass gp3 -o yaml
 
           echo "Recent events in namespace namegen:"
           kubectl -n namegen get events --sort-by=.lastTimestamp
