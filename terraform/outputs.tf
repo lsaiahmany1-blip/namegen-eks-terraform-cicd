@@ -42,3 +42,8 @@ output "ebs_csi_driver_addon_name" {
   description = "EKS add-on name for the Amazon EBS CSI Driver."
   value       = aws_eks_addon.ebs_csi_driver.addon_name
 }
+
+output "ebs_csi_driver_role_arn" {
+  description = "IAM role ARN used by the Amazon EBS CSI Driver add-on through IRSA."
+  value       = aws_iam_role.ebs_csi_driver.arn
+}
