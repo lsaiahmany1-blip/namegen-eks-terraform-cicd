@@ -106,18 +106,19 @@ GitHub Actions is the primary orchestrator. The workflow is located at:
 The pipeline performs these steps:
 
 1. Authenticate to AWS using GitHub Actions OIDC.
-2. Run Terraform init, validate, plan, and apply.
-3. Read Terraform outputs for the EKS cluster and ECR repository.
-4. Build the NameGen Docker image.
-5. Push the image to Amazon ECR.
-6. Configure kubectl for the EKS cluster.
-7. Apply Kubernetes manifests.
-8. Update the NameGen deployment image.
-9. Validate rollout, pods, services, PVCs, events, and LoadBalancer address.
+2. Bootstrap the Terraform remote state backend in S3 and DynamoDB.
+3. Run Terraform init, validate, plan, and apply.
+4. Read Terraform outputs for the EKS cluster and ECR repository.
+5. Build the NameGen Docker image.
+6. Push the image to Amazon ECR.
+7. Configure kubectl for the EKS cluster.
+8. Apply Kubernetes manifests.
+9. Update the NameGen deployment image.
+10. Validate rollout, pods, services, PVCs, events, and LoadBalancer address.
 
 ### One-Time Setup
 
-Before the first workflow run, complete the mandatory bootstrap items below. These are the only manual setup steps required before GitHub Actions can run the full deployment flow.
+Before the first workflow run, complete the mandatory OIDC setup below. The Terraform remote state S3 bucket and DynamoDB lock table are created automatically by the workflow.
 
 #### AWS OIDC Bootstrap
 
@@ -159,33 +160,31 @@ Minimum manual setup:
 
 #### Terraform Remote State Bootstrap
 
-Create one S3 bucket for Terraform state and one DynamoDB table for Terraform state locking before the first workflow run.
+The workflow automatically creates the Terraform remote state backend before running `terraform init`.
 
-Recommended names:
+Default values:
 
 ```text
-S3 bucket: <unique-prefix>-namegen-terraform-state
-DynamoDB table: namegen-terraform-locks
-State key: namegen/project3/terraform.tfstate
+TF_STATE_BUCKET=namegen-terraform-state-452670588645
+TF_STATE_KEY=namegen/dev/terraform.tfstate
+TF_LOCK_TABLE=terraform-locks
 ```
 
-The S3 bucket should have:
+The workflow:
 
-- Versioning enabled
-- Server-side encryption enabled
-- Public access blocked
+- Creates the S3 state bucket if it does not already exist
+- Enables S3 bucket versioning
+- Enables S3 bucket encryption
+- Blocks public access on the S3 bucket
+- Creates the DynamoDB lock table if it does not already exist
+- Waits until the DynamoDB table exists before running `terraform init`
 
-The DynamoDB table should have:
-
-- Partition key: `LockID`
-- Partition key type: `String`
-
-Create these GitHub Actions repository variables:
+Optional GitHub Actions repository variables can override the defaults:
 
 ```text
-TF_STATE_BUCKET=<your-s3-state-bucket-name>
-TF_STATE_KEY=namegen/project3/terraform.tfstate
-TF_LOCK_TABLE=namegen-terraform-locks
+TF_STATE_BUCKET=<custom-s3-state-bucket-name>
+TF_STATE_KEY=<custom-state-key>
+TF_LOCK_TABLE=<custom-dynamodb-lock-table>
 ```
 
 The workflow passes these values to `terraform init`, so Terraform state persists between GitHub Actions runs. This prevents Terraform from losing track of infrastructure that was created during earlier runs.
@@ -311,7 +310,7 @@ Common checks:
 - If AWS authentication fails, verify `AWS_GITHUB_ACTIONS_ROLE_ARN` exists in GitHub repository secrets.
 - If OIDC authentication fails, verify the IAM role trust policy allows the repository and `main` branch.
 - If Terraform cannot create resources, verify the bootstrap role has the required AWS permissions.
-- If Terraform cannot initialize, verify `TF_STATE_BUCKET`, `TF_STATE_KEY`, and `TF_LOCK_TABLE` are configured in GitHub Actions variables.
+- If Terraform cannot initialize, verify the default backend values or custom GitHub Actions variables for `TF_STATE_BUCKET`, `TF_STATE_KEY`, and `TF_LOCK_TABLE`.
 - If Terraform reports a state lock, check the DynamoDB lock table and confirm no other workflow run is active.
 - If infrastructure already exists but Terraform wants to recreate it, verify the workflow is using the same S3 backend bucket and state key as previous runs.
 - If the image cannot be pulled, verify the image was pushed to ECR and the EKS nodes can read from ECR.
