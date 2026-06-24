@@ -1,26 +1,45 @@
-# NameGen EKS Terraform CI/CD
+# NameGen on AWS EKS Auto Mode
 
-Project #3 starter repository for deploying the Red Hat NameGen application to AWS EKS Auto Mode using Terraform, Kubernetes manifests, and GitHub Actions.
+## 1. Project Overview
 
-## Architecture
+This repository contains Project #3: a fully automated deployment of the Red Hat NameGen application to AWS EKS Auto Mode.
 
-- GitHub Actions is the primary orchestrator.
-- Terraform provisions AWS infrastructure.
-- AWS EKS Auto Mode runs the Kubernetes workloads.
-- Amazon ECR stores the NameGen container image.
-- Kubernetes manifests deploy the application and MongoDB.
-- The application is exposed through an AWS Network Load Balancer.
-- MongoDB runs as a StatefulSet with persistent storage.
+The source application is copied into the repository root from:
 
-## Source Application
-
-The application source was copied from:
-
+```text
 https://github.com/redhat-developer-demos/namegen
+```
 
-This repository keeps the application source files in the repository root as required by the assignment.
+The project uses Terraform for AWS infrastructure, GitHub Actions as the primary orchestrator, Amazon ECR for the Docker image, and Kubernetes manifests for application deployment.
 
-## Repository Structure
+## 2. Architecture
+
+```text
+GitHub Actions
+  -> Terraform provisions AWS infrastructure
+  -> EKS Auto Mode runs Kubernetes workloads
+  -> ECR stores the NameGen Docker image
+  -> kubectl applies Kubernetes manifests
+  -> AWS Network Load Balancer exposes the application
+```
+
+Main components:
+
+- AWS VPC with public and private subnets
+- Internet Gateway and NAT Gateway
+- EKS Auto Mode cluster
+- ECR repository
+- GitHub Actions OIDC role
+- Kubernetes namespace, deployments, services, StatefulSet, and PVC
+- AWS Network Load Balancer for external access
+
+Architecture diagram:
+
+```text
+diagrams/architecture.drawio
+```
+
+## 3. Repository Structure
 
 ```text
 .
@@ -50,201 +69,217 @@ This repository keeps the application source files in the repository root as req
 `-- application source code files
 ```
 
-## Required Application Configuration
+## 4. Infrastructure Provisioning with Terraform
 
-The Kubernetes deployment sets:
+Terraform provisions the AWS infrastructure required by the project:
+
+- VPC
+- Public subnets
+- Private subnets
+- Internet Gateway
+- NAT Gateway
+- Route tables and subnet associations
+- EKS Auto Mode cluster
+- ECR repository
+- IAM roles and policies
+- GitHub Actions OIDC integration
+
+The EKS cluster uses private subnets. Public subnets are tagged for internet-facing Kubernetes load balancers, and private subnets are tagged for internal Kubernetes load balancers.
+
+Terraform files are located in:
 
 ```text
-MONGODB_URL=mongodb://genuser:password@mongodb/namegen
+terraform/
 ```
 
-MongoDB uses:
+## 5. CI/CD Pipeline with GitHub Actions
+
+GitHub Actions is the primary orchestrator. The workflow is located at:
 
 ```text
-mongodb:3.6
+.github/workflows/deploy.yml
 ```
 
-## One-Time Setup
+The pipeline performs these steps:
 
-Manual work is limited to the mandatory AWS and GitHub bootstrap needed before GitHub Actions can authenticate to AWS. After this setup, the intended flow is fully automated:
+1. Authenticate to AWS using GitHub Actions OIDC.
+2. Run Terraform init, validate, plan, and apply.
+3. Read Terraform outputs for the EKS cluster and ECR repository.
+4. Build the NameGen Docker image.
+5. Push the image to Amazon ECR.
+6. Configure kubectl for the EKS cluster.
+7. Apply Kubernetes manifests.
+8. Update the NameGen deployment image.
+9. Validate rollout, pods, services, PVCs, events, and LoadBalancer address.
 
-```text
-GitHub Actions -> Terraform apply -> EKS Auto Mode + ECR -> Docker build/push -> kubectl apply
-```
+### One-Time Setup
 
-### Required GitHub Secret
+Before the first workflow run, create the mandatory GitHub Actions OIDC bootstrap role in AWS. This is required because GitHub Actions must assume an AWS role before Terraform can run.
 
-Create this repository secret before running the workflow:
+Create this GitHub repository secret:
 
 ```text
 AWS_GITHUB_ACTIONS_ROLE_ARN
 ```
 
-The value must be the ARN of an AWS IAM role that GitHub Actions can assume using OIDC.
-
-### Why A Bootstrap Role Is Required
-
-There is a real first-run circular dependency:
-
-- `deploy.yml` needs `AWS_GITHUB_ACTIONS_ROLE_ARN` before it can authenticate to AWS.
-- Terraform runs inside `deploy.yml`.
-- Terraform currently defines the project-managed GitHub Actions OIDC role and outputs `github_actions_role_arn`.
-
-Because GitHub Actions needs an AWS role before Terraform can run, the very first AWS authentication role cannot be created by the same workflow run that depends on it. A one-time bootstrap IAM role is therefore required.
-
-After Terraform creates the project-managed role, you may optionally update the GitHub secret `AWS_GITHUB_ACTIONS_ROLE_ARN` to the Terraform output `github_actions_role_arn`.
-
-### Minimum Manual Steps
-
-1. In AWS, create or confirm the GitHub Actions OIDC identity provider.
-2. In AWS, create one bootstrap IAM role trusted by this repository and branch.
-3. Copy the bootstrap role ARN.
-4. In GitHub, create the repository secret `AWS_GITHUB_ACTIONS_ROLE_ARN` with that ARN.
-5. In GitHub, create or confirm the repository variable `AWS_REGION`, for example `us-east-1`.
-
-No Kubernetes deployment, Docker build, ECR push, EKS creation, or application deployment should be done manually.
-
-## GitHub Actions OIDC Bootstrap Review
-
-The workflow uses GitHub Actions OIDC authentication here:
-
-```yaml
-permissions:
-  id-token: write
-  contents: read
-```
-
-```yaml
-- name: Configure AWS credentials
-  uses: aws-actions/configure-aws-credentials@v4
-  with:
-    role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
-    aws-region: ${{ env.AWS_REGION }}
-```
-
-Because `deploy.yml` reads `AWS_GITHUB_ACTIONS_ROLE_ARN` before running Terraform, the bootstrap role is mandatory one-time setup and does not violate the project rule. The manual step exists only to let GitHub Actions become the primary orchestrator.
-
-### Required One-Time AWS Setup
-
-Create or confirm an IAM OIDC identity provider for GitHub Actions:
+The value is the ARN of the AWS IAM role trusted by GitHub Actions OIDC, for example:
 
 ```text
-Provider URL: https://token.actions.githubusercontent.com
-Audience: sts.amazonaws.com
+arn:aws:iam::<AWS_ACCOUNT_ID>:role/<ROLE_NAME>
 ```
 
-Create a bootstrap IAM role trusted by this repository and branch. The trust relationship must allow GitHub Actions from this repository to call `sts:AssumeRoleWithWebIdentity`:
+Minimum manual setup:
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Federated": "arn:aws:iam::<AWS_ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
-      },
-      "Action": "sts:AssumeRoleWithWebIdentity",
-      "Condition": {
-        "StringEquals": {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-        },
-        "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:lsaiahmany1-blip/namegen-eks-terraform-cicd:ref:refs/heads/main"
-        }
-      }
-    }
-  ]
-}
-```
+1. Create or confirm the AWS IAM OIDC provider for GitHub Actions:
 
-For this starter project, the bootstrap role needs enough permissions for the workflow to run Terraform and then build/deploy:
+   ```text
+   https://token.actions.githubusercontent.com
+   ```
 
-- Create and manage VPC networking resources
-- Create and manage EKS Auto Mode resources
-- Create and manage ECR resources
-- Create and manage IAM roles, policies, and OIDC resources used by the project
-- Update kubeconfig and deploy Kubernetes manifests
+2. Create one IAM role that trusts this repository and branch:
 
-For a class project, `AdministratorAccess` may be used temporarily for the bootstrap role if your instructor allows it. For a production-style submission, replace it with least-privilege IAM permissions.
+   ```text
+   repo:lsaiahmany1-blip/namegen-eks-terraform-cicd:ref:refs/heads/main
+   ```
 
-### How To Get The Role ARN
+3. Copy the role ARN.
+4. Add the ARN to GitHub as the secret `AWS_GITHUB_ACTIONS_ROLE_ARN`.
+5. Create or confirm the GitHub Actions variable:
 
-After creating the bootstrap IAM role, copy its ARN from the AWS IAM console. It will look like:
+   ```text
+   AWS_REGION=us-east-1
+   ```
+
+After this one-time setup, the deployment flow is automated through GitHub Actions.
+
+## 6. Kubernetes Workloads
+
+Kubernetes manifests are stored in:
 
 ```text
-arn:aws:iam::<AWS_ACCOUNT_ID>:role/<BOOTSTRAP_ROLE_NAME>
+kubernetes/
 ```
 
-If using the AWS CLI, run:
+The manifests deploy:
+
+- Namespace: `namegen`
+- MongoDB Secret
+- MongoDB headless Service
+- MongoDB StatefulSet
+- NameGen Deployment
+- NameGen LoadBalancer Service
+- Kustomize configuration
+
+The NameGen deployment uses this required environment variable:
+
+```text
+MONGODB_URL=mongodb://genuser:password@mongodb/namegen
+```
+
+## 7. MongoDB Persistence
+
+MongoDB is deployed as a Kubernetes StatefulSet using the required image:
+
+```text
+mongodb:3.6
+```
+
+Persistent storage is configured with a `volumeClaimTemplates` section in:
+
+```text
+kubernetes/mongodb-statefulset.yaml
+```
+
+The PVC requests persistent storage for MongoDB data at:
+
+```text
+/data/db
+```
+
+## 8. Application Access through NLB
+
+The NameGen application is exposed with a Kubernetes `LoadBalancer` Service:
+
+```text
+kubernetes/namegen-service.yaml
+```
+
+The service includes AWS annotations for Network Load Balancer support:
+
+```yaml
+service.beta.kubernetes.io/aws-load-balancer-type: external
+service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+```
+
+After deployment, the application is available through the LoadBalancer hostname or address shown by Kubernetes.
+
+## 9. Validation Commands
+
+The GitHub Actions workflow runs validation commands automatically after deployment.
+
+Useful commands for checking the deployment:
 
 ```bash
-aws iam get-role --role-name <BOOTSTRAP_ROLE_NAME> --query 'Role.Arn' --output text
+kubectl -n namegen rollout status deployment/namegen
+kubectl -n namegen get pods -o wide
+kubectl -n namegen get services -o wide
+kubectl -n namegen get pvc
+kubectl -n namegen get events --sort-by=.lastTimestamp
+kubectl -n namegen get service namegen
 ```
 
-### How To Create The GitHub Secret
+To print only the LoadBalancer hostname or IP:
 
-In GitHub:
+```bash
+kubectl -n namegen get service namegen -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
+```
 
-1. Open the repository `lsaiahmany1-blip/namegen-eks-terraform-cicd`.
-2. Go to `Settings` -> `Secrets and variables` -> `Actions`.
-3. Choose `New repository secret`.
-4. Name the secret `AWS_GITHUB_ACTIONS_ROLE_ARN`.
-5. Paste the bootstrap role ARN as the value.
-6. Save the secret.
+## 10. Screenshots
 
-Also create or confirm the repository variable:
+Submission screenshots should be placed in:
 
 ```text
-AWS_REGION=us-east-1
+screenshots/
 ```
 
-### OIDC Verification
+Suggested screenshots:
 
-The workflow is configured correctly for OIDC because:
+- Successful GitHub Actions workflow run
+- Terraform-created EKS cluster
+- ECR repository with the pushed NameGen image
+- Kubernetes pods, services, and PVC
+- Browser showing the NameGen application through the AWS NLB
 
-- It grants `id-token: write` permission.
-- It uses `aws-actions/configure-aws-credentials@v4`.
-- It passes `role-to-assume` from `AWS_GITHUB_ACTIONS_ROLE_ARN`.
-- The IAM trust policy limits access to this repository and the `main` branch.
-- It does not use long-lived AWS access keys in the workflow.
+## 11. Cleanup
 
-### Architecture Verification
+Infrastructure should be removed with Terraform when the project is complete:
 
-The documented workflow still follows the required Project #3 architecture:
-
-```text
-GitHub Actions
-  -> Terraform provisions VPC, EKS Auto Mode, ECR, IAM/OIDC
-  -> Docker image is built and pushed to ECR
-  -> kubectl deploys Kubernetes manifests
-  -> NameGen runs on EKS Auto Mode with MongoDB and an AWS NLB service
+```bash
+cd terraform
+terraform destroy
 ```
 
-This keeps GitHub Actions as the primary orchestrator and Terraform as the infrastructure provisioning layer.
+Kubernetes resources are managed by the workflow and the EKS cluster. Destroying the Terraform-managed infrastructure removes the cluster, networking resources, and ECR repository.
 
-### Circular Dependency Review
+## 12. Troubleshooting
 
-There is a bootstrap dependency by design:
+Common checks:
 
-- GitHub Actions needs `AWS_GITHUB_ACTIONS_ROLE_ARN` before it can run `terraform apply`.
-- Terraform includes a project GitHub Actions OIDC role output named `github_actions_role_arn`.
+- If AWS authentication fails, verify `AWS_GITHUB_ACTIONS_ROLE_ARN` exists in GitHub repository secrets.
+- If OIDC authentication fails, verify the IAM role trust policy allows the repository and `main` branch.
+- If Terraform cannot create resources, verify the bootstrap role has the required AWS permissions.
+- If the image cannot be pulled, verify the image was pushed to ECR and the EKS nodes can read from ECR.
+- If MongoDB does not start, check the StatefulSet, PVC, and events in the `namegen` namespace.
+- If the application cannot connect to MongoDB, verify:
 
-Therefore, the first AWS authentication role cannot be created by the same workflow run that needs it. The required solution is the one-time bootstrap role documented above. After Terraform successfully creates the project-managed role, you may update the GitHub secret `AWS_GITHUB_ACTIONS_ROLE_ARN` to the Terraform output value `github_actions_role_arn` if you want the workflow to use the Terraform-managed role going forward.
+  ```text
+  MONGODB_URL=mongodb://genuser:password@mongodb/namegen
+  ```
 
-Important: AWS allows only one IAM OIDC provider per provider URL in an account. Because this starter Terraform also defines `aws_iam_openid_connect_provider.github_actions`, a manually created bootstrap OIDC provider may need to be imported into Terraform state before the project workflow can manage it. If the provider already exists in AWS and is not in Terraform state, `terraform apply` can fail when it tries to create a duplicate provider.
+- If the LoadBalancer address is empty, wait a few minutes and check:
 
-For a clean first run, use one of these bootstrap approaches:
-
-- Create the bootstrap OIDC provider and role once, then import the provider and role into Terraform state before allowing Terraform to manage them.
-- Keep the bootstrap role outside this Terraform project and update the Terraform code later to reference the existing OIDC provider instead of creating a new one.
-
-The current documented requirement is still valid: the repository secret `AWS_GITHUB_ACTIONS_ROLE_ARN` must exist before `deploy.yml` can authenticate to AWS.
-
-### Recommended Follow-Up
-
-Keep the bootstrap role as narrow as possible. The current Terraform starter attaches broad permissions to the project-managed GitHub Actions role for simplicity, but the final project should replace broad permissions with least-privilege IAM policies once the required AWS actions are known.
-
-## Status
-
-This is an initial starter version only. Do not run Terraform or deploy until the files have been reviewed and completed.
+  ```bash
+  kubectl -n namegen get service namegen
+  kubectl -n namegen get events --sort-by=.lastTimestamp
+  ```
