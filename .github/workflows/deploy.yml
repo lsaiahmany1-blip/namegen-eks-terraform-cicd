@@ -138,6 +138,19 @@ jobs:
       - name: Configure kubectl
         run: aws eks update-kubeconfig --name "${{ steps.tf.outputs.cluster_name }}" --region "${{ env.AWS_REGION }}"
 
+      - name: Recreate MongoDB StatefulSet storage if needed
+        run: |
+          set -euo pipefail
+
+          kubectl apply -f "$K8S_MANIFEST_DIR/namespace.yaml"
+
+          kubectl -n namegen delete statefulset mongodb --ignore-not-found=true
+          kubectl -n namegen wait --for=delete pod/mongodb-0 --timeout=180s || true
+
+          for pvc in $(kubectl -n namegen get pvc -o name | grep '^persistentvolumeclaim/mongodb-data-mongodb-' || true); do
+            kubectl -n namegen delete "$pvc"
+          done
+
       - name: Deploy Kubernetes manifests
         env:
           IMAGE_TAG: ${{ github.sha }}
