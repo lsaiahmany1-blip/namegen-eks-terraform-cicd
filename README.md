@@ -281,11 +281,13 @@ MONGODB_URL=mongodb://genuser:password@mongodb/namegen
 
 ## 7. MongoDB Persistence
 
-MongoDB is deployed as a Kubernetes StatefulSet using the required image:
+MongoDB is deployed as a Kubernetes StatefulSet using MongoDB version 3.6:
 
 ```text
-mongodb:3.6
+mongo:3.6
 ```
+
+The Docker Hub image name is `mongo`, and the `3.6` tag satisfies the MongoDB 3.6 requirement.
 
 Persistent storage is configured with a `volumeClaimTemplates` section in:
 
