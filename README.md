@@ -191,6 +191,69 @@ The workflow passes these values to `terraform init`, so Terraform state persist
 
 After this one-time setup, the deployment flow is automated through GitHub Actions.
 
+### Existing Resource Recovery
+
+If AWS resources were created before the S3 backend was enabled, Terraform may fail because the new remote state does not know about those resources yet.
+
+Typical errors:
+
+```text
+RepositoryAlreadyExistsException: The repository with name 'namegen' already exists
+EntityAlreadyExists: Role with name namegen-dev-eks-cluster-role already exists
+EntityAlreadyExists: Role with name namegen-dev-eks-node-role already exists
+EntityAlreadyExists: Role with name namegen-dev-github-actions-role already exists
+```
+
+These conflicts come from Terraform resources with fixed names:
+
+```text
+aws_ecr_repository.namegen
+aws_iam_role.eks_cluster
+aws_iam_role.eks_node
+aws_iam_role.github_actions
+aws_iam_role_policy_attachment.*
+```
+
+Safest approach:
+
+- Import existing project resources into the S3-backed Terraform state when they are valid resources that should remain part of this project.
+- Do not manually recreate resources that already exist.
+- Do not delete shared or valid project resources just to make Terraform apply pass.
+- If an EKS cluster from a failed run is already being deleted, wait until AWS finishes deleting it before running the workflow again. Do not import a cluster that is in `DELETING` state.
+
+Example recovery flow after the backend bucket and lock table exist:
+
+```bash
+cd terraform
+
+terraform init \
+  -backend-config="bucket=namegen-terraform-state-452670588645" \
+  -backend-config="key=namegen/dev/terraform.tfstate" \
+  -backend-config="region=us-east-1" \
+  -backend-config="dynamodb_table=terraform-locks" \
+  -backend-config="encrypt=true"
+
+terraform import aws_ecr_repository.namegen namegen
+terraform import aws_iam_role.eks_cluster namegen-dev-eks-cluster-role
+terraform import aws_iam_role.eks_node namegen-dev-eks-node-role
+terraform import aws_iam_role.github_actions namegen-dev-github-actions-role
+```
+
+If policy attachments already exist, import them using the Terraform resource address and the AWS import ID format `role-name/policy-arn`. Examples:
+
+```bash
+terraform import aws_iam_role_policy_attachment.eks_cluster_policy \
+  namegen-dev-eks-cluster-role/arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+
+terraform import aws_iam_role_policy_attachment.eks_worker_node_policy \
+  namegen-dev-eks-node-role/arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+
+terraform import aws_iam_role_policy_attachment.github_actions_admin_starter \
+  namegen-dev-github-actions-role/arn:aws:iam::aws:policy/AdministratorAccess
+```
+
+After importing, review a Terraform plan before allowing the normal GitHub Actions workflow to continue with apply. The expected result should be either no changes or only intentional changes from the current Terraform configuration.
+
 ## 6. Kubernetes Workloads
 
 Kubernetes manifests are stored in:
@@ -313,6 +376,7 @@ Common checks:
 - If Terraform cannot initialize, verify the default backend values or custom GitHub Actions variables for `TF_STATE_BUCKET`, `TF_STATE_KEY`, and `TF_LOCK_TABLE`.
 - If Terraform reports a state lock, check the DynamoDB lock table and confirm no other workflow run is active.
 - If infrastructure already exists but Terraform wants to recreate it, verify the workflow is using the same S3 backend bucket and state key as previous runs.
+- If Terraform reports that ECR or IAM resources already exist, import the valid existing resources into the S3-backed Terraform state instead of recreating them.
 - If the image cannot be pulled, verify the image was pushed to ECR and the EKS nodes can read from ECR.
 - If MongoDB does not start, check the StatefulSet, PVC, and events in the `namegen` namespace.
 - If the application cannot connect to MongoDB, verify:
