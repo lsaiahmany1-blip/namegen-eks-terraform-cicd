@@ -78,3 +78,22 @@ jobs:
         run: |
           kubectl apply -k "$K8S_MANIFEST_DIR"
           kubectl -n namegen set image deployment/namegen namegen="$ECR_REPOSITORY_URL:$IMAGE_TAG"
+
+      - name: Validate Kubernetes deployment
+        run: |
+          kubectl -n namegen rollout status deployment/namegen --timeout=300s
+
+          echo "Pods in namespace namegen:"
+          kubectl -n namegen get pods -o wide
+
+          echo "Services in namespace namegen:"
+          kubectl -n namegen get services -o wide
+
+          echo "PVCs in namespace namegen:"
+          kubectl -n namegen get pvc
+
+          echo "Recent events in namespace namegen:"
+          kubectl -n namegen get events --sort-by=.lastTimestamp
+
+          echo "NameGen LoadBalancer hostname/address:"
+          kubectl -n namegen get service namegen -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
