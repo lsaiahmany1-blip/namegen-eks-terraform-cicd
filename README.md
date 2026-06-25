@@ -37,6 +37,7 @@ Architecture diagram:
 
 ```text
 diagrams/architecture.drawio
+diagrams/architecture.png
 ```
 
 ## 3. Repository Structure
@@ -58,13 +59,23 @@ diagrams/architecture.drawio
 |   |-- mongodb-secret.yaml
 |   |-- mongodb-init-configmap.yaml
 |   |-- mongodb-service.yaml
+|   |-- storageclass-gp3.yaml
 |   |-- mongodb-statefulset.yaml
 |   |-- namegen-deployment.yaml
 |   |-- namegen-service.yaml
 |   `-- kustomization.yaml
 |-- diagrams/
-|   `-- architecture.drawio
+|   |-- architecture.drawio
+|   `-- architecture.png
 |-- screenshots/
+|   |-- 01-github-repository.png
+|   |-- 02-github-actions-success.png
+|   |-- 03-workflow-validation.png
+|   |-- 04-eks-cluster.png
+|   |-- 05-loadbalancer-application.png
+|   |-- 06-vpc.png
+|   |-- 07-terraform-folder.png
+|   |-- 08-ecr-repository.png
 |   `-- README.md
 |-- Dockerfile
 |-- README.md
@@ -116,7 +127,7 @@ The pipeline performs these steps:
 7. Configure kubectl for the EKS cluster.
 8. Apply Kubernetes manifests.
 9. Update the NameGen deployment image.
-10. Validate rollout, pods, services, PVCs, events, and LoadBalancer address.
+10. Validate rollout, pods, services, PVCs, events, LoadBalancer address, and the application write/read API path.
 
 ### One-Time Setup
 
@@ -270,6 +281,7 @@ The manifests deploy:
 - MongoDB Secret
 - MongoDB init ConfigMap
 - MongoDB headless Service
+- EKS Auto Mode `gp3` StorageClass
 - MongoDB StatefulSet
 - NameGen Deployment
 - NameGen LoadBalancer Service
@@ -352,7 +364,7 @@ After deployment, the application is available through the LoadBalancer hostname
 
 ## 9. Validation Commands
 
-The GitHub Actions workflow runs validation commands automatically after deployment.
+The GitHub Actions workflow runs validation commands automatically after deployment, including an in-cluster API write/read check against the NameGen service.
 
 Useful commands for checking the deployment:
 
@@ -373,17 +385,20 @@ kubectl -n namegen get service namegen -o jsonpath='{.status.loadBalancer.ingres
 
 ## 10. Screenshots
 
-Submission screenshots should be placed in:
+Submission screenshots are stored in:
 
 ```text
 screenshots/
 ```
 
-Suggested screenshots:
+Included screenshots:
 
+- GitHub repository structure
 - Successful GitHub Actions workflow run
 - Terraform-created EKS cluster
 - ECR repository with the pushed NameGen image
+- Terraform folder contents
+- Terraform-created VPC
 - Kubernetes pods, services, and PVC
 - Browser showing the NameGen application through the AWS NLB
 
