@@ -11,8 +11,9 @@ This folder contains the final project screenshots used to demonstrate that Proj
 | `05-loadbalancer-application.png` | NameGen application opened through the AWS Network Load Balancer and saving names successfully. |
 | `06-vpc.png` | AWS VPC console showing the Terraform-created project VPC resources. |
 | `07-terraform-folder.png` | Terraform folder in GitHub with backend, provider, variables, outputs, and main infrastructure files. |
+| `08-ecr-repository.png` | Amazon ECR repository showing NameGen Docker images pushed by the GitHub Actions workflow. |
 
 ## Review Notes
 
 - Duplicate screenshots were not added. The repository root screenshot already covers the project structure, so a separate duplicate project-structure screenshot was not kept.
-- Recommended additional screenshot before final submission: an Amazon ECR repository screenshot showing the pushed NameGen Docker image tag.
+- The screenshot set now covers the repository, CI/CD workflow, Terraform files, EKS cluster, VPC, ECR image repository, Kubernetes validation, and live application access through the LoadBalancer.
