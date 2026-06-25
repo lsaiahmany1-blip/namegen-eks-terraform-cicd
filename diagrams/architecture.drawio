@@ -19,16 +19,16 @@
         <mxCell id="eks" value="Amazon EKS Auto Mode Cluster" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
           <mxGeometry x="250" y="250" width="600" height="330" as="geometry" />
         </mxCell>
-        <mxCell id="nlb" value="AWS Network Load Balancer&#xa;Kubernetes LoadBalancer Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+        <mxCell id="nlb" value="AWS Network&#xa;Load Balancer&#xa;Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
           <mxGeometry x="60" y="360" width="190" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="app" value="NameGen Deployment&#xa;MONGODB_URL=mongodb://genuser:password@mongodb/namegen" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="eks">
+        <mxCell id="app" value="NameGen Deployment&#xa;MONGODB_URL configured" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="eks">
           <mxGeometry x="60" y="90" width="240" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="mongo" value="MongoDB StatefulSet&#xa;mongodb:3.6" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="eks">
+        <mxCell id="mongo" value="MongoDB StatefulSet&#xa;MongoDB 3.6 (mongo:3.6)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="eks">
           <mxGeometry x="360" y="90" width="190" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="pvc" value="Persistent Volume Claim&#xa;EBS-backed storage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="eks">
+        <mxCell id="pvc" value="Persistent Volume&#xa;Claim&#xa;EBS-backed storage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="eks">
           <mxGeometry x="360" y="220" width="190" height="70" as="geometry" />
         </mxCell>
         <mxCell id="edge1" edge="1" parent="1" source="github" target="terraform" style="endArrow=block;html=1;rounded=0;">
