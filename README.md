@@ -35,6 +35,8 @@ Main components:
 
 Architecture diagram:
 
+![NameGen EKS Auto Mode architecture](diagrams/architecture.png)
+
 ```text
 diagrams/architecture.drawio
 diagrams/architecture.png
