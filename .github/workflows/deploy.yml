@@ -284,22 +284,61 @@ jobs:
           kubectl get storageclass gp3 -o yaml
 
           echo "Testing application write/read path through the in-cluster service:"
-          kubectl -n namegen delete pod namegen-api-check --ignore-not-found=true
-          kubectl -n namegen run namegen-api-check \
-            --rm \
-            --attach \
-            --restart=Never \
-            --wait=true \
-            --image=curlimages/curl:8.8.0 \
-            --command -- sh -c '
-              set -e
-              payload="{\"firstName\":\"Workflow\",\"lastName\":\"Validation\"}"
-              curl -fsS -X POST \
-                -H "Content-Type: application/json" \
-                -d "$payload" \
-                http://namegen/api/names
-              curl -fsS http://namegen/api/names | grep -q "Workflow"
-            '
+          kubectl -n namegen delete job namegen-api-check --ignore-not-found=true
+          kubectl -n namegen wait --for=delete job/namegen-api-check --timeout=120s || true
+
+          cat <<'EOF' | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: namegen-api-check
+            namespace: namegen
+          spec:
+            backoffLimit: 1
+            template:
+              metadata:
+                labels:
+                  app: namegen-api-check
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: api-check
+                    image: curlimages/curl:8.8.0
+                    command:
+                      - /bin/sh
+                      - -c
+                      - |
+                        set -eu
+                        payload='{"firstName":"Workflow","lastName":"Validation"}'
+                        echo "Posting validation name through NameGen API..."
+                        curl --fail --show-error --silent \
+                          --connect-timeout 10 \
+                          --max-time 30 \
+                          -X POST \
+                          -H "Content-Type: application/json" \
+                          -d "$payload" \
+                          http://namegen.namegen.svc.cluster.local/api/names
+                        echo
+                        echo "Reading names back through NameGen API..."
+                        response="$(curl --fail --show-error --silent \
+                          --connect-timeout 10 \
+                          --max-time 30 \
+                          http://namegen.namegen.svc.cluster.local/api/names)"
+                        echo "$response"
+                        echo "$response" | grep -q '"firstName":"Workflow"'
+                        echo "$response" | grep -q '"lastName":"Validation"'
+          EOF
+
+          if ! kubectl -n namegen wait --for=condition=complete job/namegen-api-check --timeout=180s; then
+            echo "NameGen API validation job failed or timed out."
+            kubectl -n namegen logs job/namegen-api-check || true
+            kubectl -n namegen describe job namegen-api-check || true
+            kubectl -n namegen get pods -l app=namegen-api-check -o wide || true
+            exit 1
+          fi
+
+          kubectl -n namegen logs job/namegen-api-check
+          kubectl -n namegen delete job namegen-api-check --ignore-not-found=true
 
           echo "Recent events in namespace namegen:"
           kubectl -n namegen get events --sort-by=.lastTimestamp
